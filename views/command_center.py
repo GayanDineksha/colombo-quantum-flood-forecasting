@@ -14,6 +14,37 @@ COLOMBO_ZONES = [
     {"name": "Dematagoda", "lat": 6.9350, "lon": 79.8720},
 ]
 
+# Heuristic topological weights — based on elevation, proximity to the
+# Kelani River, and urban density. Used to spatially disaggregate a single
+# district-level QLSTM output into 8 zone-level risk estimates.
+ZONE_MULTIPLIERS = {
+    "Kolonnawa": 1.35,      # Very low elevation, highly prone to river overflow
+    "Kaduwela": 1.25,       # Low elevation, river basin
+    "Kelaniya": 1.20,       # River adjacent
+    "Orugodawatta": 1.15,   # Urban basin
+    "Grandpass": 1.10,      # Dense urban, prone to drainage failure
+    "Dematagoda": 1.05,     # Average elevation
+    "Kotte": 0.90,          # Higher elevation, protected by wetlands
+    "Wellawatte": 0.75,     # Coastal runoff, fast drainage
+}
+
+MAX_RISK = 99.9
+
+
+def calculate_localized_risks(base_risk):
+    """
+    Distributes a single baseline (district-level) flood risk value across
+    all 8 zones using static heuristic multipliers. Mirrors the topological
+    weighting approach that will be used once the real QLSTM model — which
+    can only output one city-wide baseline from unified NASA POWER /
+    Open-Meteo data — is connected.
+    """
+    localized = {}
+    for zone_name, weight in ZONE_MULTIPLIERS.items():
+        risk = base_risk * weight
+        localized[zone_name] = round(min(risk, MAX_RISK), 1)
+    return localized
+
 
 def _risk_color(risk):
     """Yellow -> orange -> red gradient based on risk severity."""
@@ -34,15 +65,16 @@ def _risk_label(risk):
         return "CRITICAL"
 
 
-def _generate_zone_data():
+def _generate_zone_data(localized_risks):
+    """Builds the map/table DataFrame from a dict of {zone_name: risk}."""
     rows = []
     for zone in COLOMBO_ZONES:
-        risk = random.uniform(20, 95)
+        risk = localized_risks[zone["name"]]
         rows.append({
             "name": zone["name"],
             "lat": zone["lat"],
             "lon": zone["lon"],
-            "risk": round(risk, 1),
+            "risk": risk,
             "elevation": risk * 30,
             "color": _risk_color(risk),
             "label": _risk_label(risk),
@@ -59,14 +91,23 @@ def show():
         if st.button("🔄 Refresh Live Data", use_container_width=True):
             st.rerun()
 
-    # Hero metrics
-    overall_risk = random.uniform(35, 90)
+    # ---- Simulated QLSTM baseline output ----
+    # This single value stands in for the real model's district-level output
+    # once NASA POWER / Open-Meteo data is wired in.
+    simulated_base_risk = random.uniform(20, 80)
+    localized_risks = calculate_localized_risks(simulated_base_risk)
+
     rainfall = random.uniform(5, 60)
-    status = "OPERATIONAL" if overall_risk < 80 else "ALERT"
+    status = "OPERATIONAL" if simulated_base_risk < 80 else "ALERT"
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Current Flood Risk", f"{overall_risk:.1f}%", delta=f"{random.uniform(-5, 5):.1f}%")
+        st.metric(
+            "Current Flood Risk",
+            f"{simulated_base_risk:.1f}%",
+            delta=f"{random.uniform(-5, 5):.1f}%",
+            help="Simulated district-level baseline output (stand-in for the QLSTM model).",
+        )
     with col2:
         st.metric("Live Rainfall", f"{rainfall:.1f} mm/h", delta=f"{random.uniform(-3, 3):.1f} mm/h")
     with col3:
@@ -74,10 +115,14 @@ def show():
 
     st.divider()
 
-    # 3D PyDeck Map
+    # ---- 3D PyDeck Map ----
     st.subheader("📍 Spatial Flood Risk — Colombo")
+    st.caption(
+        "Zone-level risk is derived from a single baseline via topological "
+        "weighting (elevation, river proximity, urban density)."
+    )
 
-    df = _generate_zone_data()
+    df = _generate_zone_data(localized_risks)
 
     # Main hexagonal risk pillars
     column_layer = pdk.Layer(
@@ -160,8 +205,14 @@ def show():
 
     # ---- Ranked risk table ----
     with st.expander("📊 Zone Risk Breakdown (ranked)", expanded=False):
-        ranked = df[["name", "risk", "label"]].sort_values("risk", ascending=False).reset_index(drop=True)
+        st.caption(f"Baseline risk: {simulated_base_risk:.1f}% × zone multiplier = localized risk")
+        ranked = df[["name", "risk", "label"]].copy()
+        ranked["multiplier"] = ranked["name"].map(ZONE_MULTIPLIERS)
+        ranked = ranked.sort_values("risk", ascending=False).reset_index(drop=True)
         ranked.index += 1
+        ranked = ranked.rename(columns={
+            "name": "Zone", "risk": "Risk %", "label": "Status", "multiplier": "Weight"
+        })
         st.dataframe(ranked, use_container_width=True)
 
     st.divider()
@@ -170,7 +221,7 @@ def show():
     st.subheader("📡 Emergency Alert Dispatch")
     c1, c2 = st.columns([2, 1])
     with c1:
-        if overall_risk > 75:
+        if simulated_base_risk > 75:
             st.error("🔴 Twilio SMS Trigger: **ARMED** — risk threshold exceeded")
         else:
             st.success("🟢 Twilio SMS Trigger: **STANDBY** — risk within safe range")
