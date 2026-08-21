@@ -1,0 +1,26 @@
+{
+  "classical_lstm": {
+    "model_type": "Classical LSTM",
+    "total_parameters": 53825,
+    "epochs_run": 42,
+    "training_time_seconds": 15.3,
+    "test_metrics": {
+      "test_mse": 7.4737,
+      "test_rmse": 2.7338,
+      "test_mae": 1.8144,
+      "test_r2": 0.9007
+    }
+  },
+  "qlstm": {
+    "model_type": "QLSTM",
+    "total_parameters": 4561,
+    "epochs_run": 17,
+    "training_time_seconds": 1710.6,
+    "test_metrics": {
+      "test_mse": 9.0017,
+      "test_rmse": 3.0003,
+      "test_mae": 1.9758,
+      "test_r2": 0.8804
+    }
+  }
+}

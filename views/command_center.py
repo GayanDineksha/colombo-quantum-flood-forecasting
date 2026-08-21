@@ -2,6 +2,8 @@ import streamlit as st
 import pydeck as pdk
 import pandas as pd
 import random
+import requests
+from utils.weather_api import get_live_data
 
 COLOMBO_ZONES = [
     {"name": "Kolonnawa", "lat": 6.9344, "lon": 79.8817},
@@ -29,16 +31,10 @@ ZONE_MULTIPLIERS = {
 }
 
 MAX_RISK = 99.9
+API_URL = "http://localhost:8000/predict/live"
 
 
 def calculate_localized_risks(base_risk):
-    """
-    Distributes a single baseline (district-level) flood risk value across
-    all 8 zones using static heuristic multipliers. Mirrors the topological
-    weighting approach that will be used once the real QLSTM model — which
-    can only output one city-wide baseline from unified NASA POWER /
-    Open-Meteo data — is connected.
-    """
     localized = {}
     for zone_name, weight in ZONE_MULTIPLIERS.items():
         risk = base_risk * weight
@@ -82,6 +78,36 @@ def _generate_zone_data(localized_risks):
     return pd.DataFrame(rows)
 
 
+def _get_current_rainfall():
+    try:
+        df, is_real = get_live_data()
+        latest_rainfall = float(df["rainfall"].iloc[-1])
+        return latest_rainfall, is_real
+    except Exception:
+        return random.uniform(5, 60), False
+
+
+def _get_baseline_risk():
+    """
+    Calls the FastAPI backend (model/api.py) which loads the trained
+    QLSTM and fetches live NASA POWER data internally. Falls back to a
+    simulated value if the API is unreachable, so the dashboard never
+    breaks during a demo (e.g. FastAPI server not started, or NASA
+    POWER temporarily down).
+    """
+    try:
+        response = requests.get(API_URL, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+
+        if "error" in data:
+            return random.uniform(20, 80), False, data["error"]
+
+        return data["flood_risk_percent"], True, None
+    except Exception as e:
+        return random.uniform(20, 80), False, str(e)
+
+
 def show():
     st.title("🚨 Command Center")
 
@@ -89,42 +115,53 @@ def show():
     top_l, top_r = st.columns([4, 1])
     with top_r:
         if st.button("🔄 Refresh Live Data", use_container_width=True):
+            st.cache_data.clear()
             st.rerun()
 
-    # ---- Simulated QLSTM baseline output ----
-    # This single value stands in for the real model's district-level output
-    # once NASA POWER / Open-Meteo data is wired in.
-    simulated_base_risk = random.uniform(20, 80)
-    localized_risks = calculate_localized_risks(simulated_base_risk)
+    # ---- QLSTM baseline output (via FastAPI backend) ----
+    base_risk, risk_is_live, risk_error = _get_baseline_risk()
+    localized_risks = calculate_localized_risks(base_risk)
 
-    rainfall = random.uniform(5, 60)
-    status = "OPERATIONAL" if simulated_base_risk < 80 else "ALERT"
+    rainfall, rainfall_is_live = _get_current_rainfall()
+    status = "OPERATIONAL" if base_risk < 80 else "ALERT"
+
+    # Real delta vs the previous reading, instead of a fake random one
+    prev_risk = st.session_state.get("prev_base_risk")
+    delta = f"{base_risk - prev_risk:.1f}%" if prev_risk is not None else None
+    st.session_state["prev_base_risk"] = base_risk
 
     col1, col2, col3 = st.columns(3)
     with col1:
+        risk_label = "Current Flood Risk" if risk_is_live else "Current Flood Risk (simulated)"
         st.metric(
-            "Current Flood Risk",
-            f"{simulated_base_risk:.1f}%",
-            delta=f"{random.uniform(-5, 5):.1f}%",
-            help="Simulated district-level baseline output (stand-in for the QLSTM model).",
+            risk_label,
+            f"{base_risk:.1f}%",
+            delta=delta,
+            help="QLSTM prediction via FastAPI backend." if risk_is_live
+                 else "FastAPI backend unreachable — showing simulated placeholder.",
         )
     with col2:
-        st.metric("Live Rainfall", f"{rainfall:.1f} mm/h", delta=f"{random.uniform(-3, 3):.1f} mm/h")
+        rainfall_label = "Live Rainfall" if rainfall_is_live else "Live Rainfall (simulated)"
+        st.metric(rainfall_label, f"{rainfall:.1f} mm/h")
     with col3:
         st.metric("System Status", status)
+
+    if not risk_is_live:
+        st.caption(f"🟡 QLSTM backend unreachable — flood risk is simulated. ({risk_error})")
+    if not rainfall_is_live:
+        st.caption("🟡 Open-Meteo unreachable — rainfall reading is simulated.")
 
     st.divider()
 
     # ---- 3D PyDeck Map ----
     st.subheader("📍 Spatial Flood Risk — Colombo")
     st.caption(
-        "Zone-level risk is derived from a single baseline via topological "
+        "Zone-level risk is derived from a single QLSTM baseline via topological "
         "weighting (elevation, river proximity, urban density)."
     )
 
     df = _generate_zone_data(localized_risks)
 
-    # Main hexagonal risk pillars
     column_layer = pdk.Layer(
         "ColumnLayer",
         data=df,
@@ -145,7 +182,6 @@ def show():
         },
     )
 
-    # Pulsing ground halo under critical-risk zones only
     critical_df = df[df["risk"] >= 75]
     halo_layer = pdk.Layer(
         "ScatterplotLayer",
@@ -159,7 +195,6 @@ def show():
         pickable=False,
     )
 
-    # Floating zone-name + risk labels above each pillar
     text_layer = pdk.Layer(
         "TextLayer",
         data=df,
@@ -194,7 +229,6 @@ def show():
         )
     )
 
-    # Legend
     lg1, lg2, lg3 = st.columns(3)
     with lg1:
         st.markdown("🟡 **LOW** — under 50%")
@@ -203,9 +237,8 @@ def show():
     with lg3:
         st.markdown("🔴 **CRITICAL** — above 75% (pulsing halo)")
 
-    # ---- Ranked risk table ----
     with st.expander("📊 Zone Risk Breakdown (ranked)", expanded=False):
-        st.caption(f"Baseline risk: {simulated_base_risk:.1f}% × zone multiplier = localized risk")
+        st.caption(f"Baseline risk: {base_risk:.1f}% × zone multiplier = localized risk")
         ranked = df[["name", "risk", "label"]].copy()
         ranked["multiplier"] = ranked["name"].map(ZONE_MULTIPLIERS)
         ranked = ranked.sort_values("risk", ascending=False).reset_index(drop=True)
@@ -217,11 +250,10 @@ def show():
 
     st.divider()
 
-    # Twilio SMS Trigger
     st.subheader("📡 Emergency Alert Dispatch")
     c1, c2 = st.columns([2, 1])
     with c1:
-        if simulated_base_risk > 75:
+        if base_risk > 75:
             st.error("🔴 Twilio SMS Trigger: **ARMED** — risk threshold exceeded")
         else:
             st.success("🟢 Twilio SMS Trigger: **STANDBY** — risk within safe range")
