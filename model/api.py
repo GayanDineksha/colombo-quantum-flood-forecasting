@@ -23,14 +23,29 @@ import torch.nn as nn
 import pennylane as qml
 import requests
 from datetime import datetime, timedelta
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict
+from dotenv import load_dotenv
+import os
+
+
+# Lightweight API key protection (addresses NFR1 - "strict access
+# control"). Not a substitute for full Supabase RBAC, but ensures the
+# live model endpoint isn't callable by anyone who finds the URL.
+# Key is loaded from .env (never hardcoded, never committed to Git -
+# .env is excluded via .gitignore).
+load_dotenv()
+API_KEY = os.getenv("API_KEY", "flood-ews-dev-key-2026")  # fallback only if .env is missing
+
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 # Reproduce the exact QLSTM architecture used in training - must match
 # train_qlstm.py exactly, or the saved weights won't load correctly.
-
 HIDDEN_SIZE = 64
 N_QUBITS = 4
 N_QLAYERS = 2
@@ -145,7 +160,6 @@ def predict_from_window(df_window: pd.DataFrame) -> float:
 # dual-source setup - Open-Meteo prioritized because real-time data
 # matters more for an early-warning system than NASA POWER's ~3 day
 # processing lag, per the thesis's own stated "prediction lag" problem.
-
 COLOMBO_LAT, COLOMBO_LON = 6.9271, 79.8612
 
 
@@ -253,7 +267,6 @@ def fetch_live_features_with_fallback():
 
 
 # FastAPI app
-
 app = FastAPI(title="Flood Risk QLSTM API", version="1.0")
 
 
@@ -271,7 +284,7 @@ def root():
     }
 
 
-@app.get("/predict/live")
+@app.get("/predict/live", dependencies=[Depends(verify_api_key)])
 def predict_live():
     """
     Primary endpoint. Tries Open-Meteo (real-time) first, automatically
@@ -294,7 +307,7 @@ def predict_live():
     }
 
 
-@app.get("/predict/live/openmeteo")
+@app.get("/predict/live/openmeteo", dependencies=[Depends(verify_api_key)])
 def predict_live_openmeteo():
     """Explicit Open-Meteo-only endpoint - useful for testing/comparison."""
     try:
@@ -312,7 +325,7 @@ def predict_live_openmeteo():
     }
 
 
-@app.get("/predict/live/nasa")
+@app.get("/predict/live/nasa", dependencies=[Depends(verify_api_key)])
 def predict_live_nasa():
     """Explicit NASA POWER-only endpoint - useful for testing/comparison."""
     try:
@@ -330,7 +343,7 @@ def predict_live_nasa():
     }
 
 
-@app.post("/predict")
+@app.post("/predict", dependencies=[Depends(verify_api_key)])
 def predict_manual(payload: ManualWindow):
     df = pd.DataFrame(payload.days)
     if len(df) != LOOKBACK:

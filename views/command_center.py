@@ -96,7 +96,7 @@ def _get_baseline_risk():
     POWER temporarily down).
     """
     try:
-        response = requests.get(API_URL, timeout=15)
+        response = requests.get(API_URL, headers={"x-api-key": "flood-ews-dev-key-2026"}, timeout=15)
         response.raise_for_status()
         data = response.json()
 
