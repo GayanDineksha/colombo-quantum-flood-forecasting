@@ -1,5 +1,12 @@
 import streamlit as st
 import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+VALID_EMAIL = os.getenv("ADMIN_EMAIL")
+VALID_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
 
 def show():
     """Renders the login/auth screen (View 1)."""
@@ -28,13 +35,15 @@ def show():
             login_clicked = st.button("Sign In", use_container_width=True, type="primary")
 
             if login_clicked:
-                if email and password:
+                if not email or not password:
+                    st.error("Please enter both email and password.")
+                elif email == VALID_EMAIL and password == VALID_PASSWORD:
                     with st.spinner("Authenticating via Supabase..."):
                         time.sleep(1)
                     st.session_state["authenticated"] = True
                     st.session_state["user_email"] = email
                     st.rerun()
                 else:
-                    st.error("Please enter both email and password.")
+                    st.error("Invalid email or password.")
 
             st.caption("This is a simulated login for thesis demonstration purposes.")
