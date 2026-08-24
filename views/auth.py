@@ -7,21 +7,23 @@ load_dotenv()
 VALID_EMAIL = os.getenv("ADMIN_EMAIL")
 VALID_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
-
 def show():
-    """Renders the login/auth screen (View 1)."""
 
     left, center, right = st.columns([1, 1.2, 1])
 
     with center:
         st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Updated Title
         st.markdown(
-            "<h1 style='text-align: center;'>🌊 Flood Early Warning</h1>",
+            "<h1 style='text-align: center;'>🌊 Flood Early Warning Systems</h1>",
             unsafe_allow_html=True,
         )
+        
+        # Added Authorized Personnel Warning
         st.markdown(
-            "<p style='text-align: center; color: gray;'>"
-            "Quantum-Enhanced Command Center</p>",
+            "<p style='text-align: center; color: #ff4b4b; font-weight: 600;'>"
+            "Restricted Access: Authorized Personnel Only</p>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -45,5 +47,4 @@ def show():
                     st.rerun()
                 else:
                     st.error("Invalid email or password.")
-
-            st.caption("This is a simulated login for thesis demonstration purposes.")
+                    
