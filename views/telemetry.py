@@ -13,7 +13,6 @@ def _minmax_scale(series):
 
 def show():
     st.title("📊 Telemetry Analytics")
-    st.caption("Live Open-Meteo readings vs NASA POWER historical baseline — Colombo, Sri Lanka")
 
     with st.spinner("Fetching live weather data..."):
         live_df, live_is_real = get_live_data()
@@ -31,9 +30,6 @@ def show():
             st.success("🟢 NASA POWER: Live data connected")
         else:
             st.warning("🟡 NASA POWER: Unreachable — showing simulated fallback data")
-
-    if hist_is_real:
-        st.caption("ℹ️ NASA POWER data has an inherent ~3 day processing lag — this is expected, not an error.")
 
     st.divider()
 

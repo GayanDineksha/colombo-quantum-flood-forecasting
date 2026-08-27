@@ -146,8 +146,6 @@ def show():
     with col3:
         st.metric("System Status", status)
 
-    if not risk_is_live:
-        st.caption(f"🟡 QLSTM backend unreachable — flood risk is simulated. ({risk_error})")
     if not rainfall_is_live:
         st.caption("🟡 Open-Meteo unreachable — rainfall reading is simulated.")
 
@@ -155,10 +153,6 @@ def show():
 
     # ---- 3D PyDeck Map ----
     st.subheader("📍 Spatial Flood Risk — Colombo")
-    st.caption(
-        "Zone-level risk is derived from a single QLSTM baseline via topological "
-        "weighting (elevation, river proximity, urban density)."
-    )
 
     df = _generate_zone_data(localized_risks)
 

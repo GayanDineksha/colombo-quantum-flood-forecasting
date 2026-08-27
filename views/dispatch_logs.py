@@ -4,7 +4,6 @@ import pandas as pd
 
 def show():
     st.title("📋 Dispatch Logs")
-    st.caption("History of triggered SMS alerts — simulated Twilio + Supabase log")
 
     logs = st.session_state.get("dispatch_logs", [])
 
