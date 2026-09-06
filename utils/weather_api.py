@@ -9,8 +9,8 @@ COLOMBO_LAT = 6.9271
 COLOMBO_LON = 79.8612
 
 
-@st.cache_data(ttl=1800)  # refresh every 30 minutes
-def fetch_openmeteo_data(days_back=3):
+@st.cache_data(ttl=1800)
+def fetch_openmeteo_data(days_back=7):
     """
     Fetches near real-time hourly weather data from Open-Meteo.
     Returns a DataFrame with columns: timestamp, temperature, humidity, rainfall.
